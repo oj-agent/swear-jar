@@ -2,11 +2,12 @@
   "name": "Swear Jar",
   "short_name": "SwearJar",
   "description": "Two-person swear jar tracker",
-  "start_url": "/",
+  "start_url": "/swear-jar/",
   "display": "standalone",
   "background_color": "#1a1a2e",
   "theme_color": "#e94560",
   "orientation": "portrait-primary",
+  "scope": "/swear-jar/",
   "icons": [
     {
       "src": "icon-192.png",

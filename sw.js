@@ -1,9 +1,9 @@
 // Swear Jar Service Worker — offline-first caching
-const CACHE_NAME = 'swear-jar-v1';
+const CACHE_NAME = 'swear-jar-v2';
 const ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json'
+  '/swear-jar/',
+  '/swear-jar/index.html',
+  '/swear-jar/manifest.json'
 ];
 
 self.addEventListener('install', (event) => {
