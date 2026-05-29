@@ -389,6 +389,7 @@
     </div>
     <button class="modal-btn btn-warning" onclick="setTotals()">Set Totals</button>
     <button class="modal-btn btn-danger" onclick="resetJar()">🗑️ Reset Both to $0</button>
+    <button class="modal-btn btn-danger" onclick="clearLocalData()" style="margin-top:8px">🧹 Clear All Local Data</button>
 
     <div class="section-title">Google Sheets Sync</div>
     <div class="sheets-status" id="sheetsStatus">Not configured</div>
@@ -710,6 +711,13 @@ function setTotals() {
   updateUI();
   showToast('Totals updated!');
   closeSettings();
+}
+
+function clearLocalData() {
+  if (!confirm('Clear ALL local data (log, totals, settings)? This removes everything stored on this device only. The Google Sheet is not affected.')) return;
+  localStorage.removeItem('swearJarState');
+  showToast('Local data cleared — reloading…');
+  setTimeout(() => location.reload(), 1200);
 }
 
 function resetJar() {

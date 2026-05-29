@@ -1,5 +1,5 @@
 // Swear Jar Service Worker — offline-first caching
-const CACHE_NAME = 'swear-jar-v3';
+const CACHE_NAME = 'swear-jar-v4';
 const ASSETS = [
   '/swear-jar/',
   '/swear-jar/index.html',
