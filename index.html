@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Swear Jar">
+  <meta name="theme-color" content="#1a1a2e">
+  <title>Swear Jar 💰</title>
+  <link rel="manifest" href="manifest.json">
+  <!-- Apple touch icons (inlined SVG as data URIs since we have no external files) -->
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%231a1a2e'/%3E%3Ctext y='.9em' font-size='80' x='10'%3E💰%3C/text%3E%3C/svg%3E">
+  <style>
+    :root {
+      --bg: #1a1a2e;
+      --card: #16213e;
+      --accent: #e94560;
+      --green: #0f9b58;
+      --gold: #f4c542;
+      --text: #eaeaea;
+      --muted: #8892a4;
+      --radius: 18px;
+      --shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      padding: env(safe-area-inset-top, 12px) env(safe-area-inset-right, 12px) env(safe-area-inset-bottom, 12px) env(safe-area-inset-left, 12px);
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 8px 8px;
+    }
+
+    header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    header h1 span { color: var(--gold); }
+
+    .header-actions { display: flex; gap: 10px; }
+
+    .icon-btn {
+      background: var(--card);
+      border: none;
+      color: var(--text);
+      border-radius: 12px;
+      width: 42px; height: 42px;
+      font-size: 1.2rem;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s;
+    }
+    .icon-btn:active { background: #2a2a4e; }
+
+    .sync-status {
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-align: center;
+      padding: 2px 0 8px;
+      min-height: 20px;
+    }
+    .sync-status.syncing { color: var(--gold); }
+    .sync-status.synced  { color: var(--green); }
+    .sync-status.error   { color: var(--accent); }
+
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 4px 0;
+    }
+
+    .jar-card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 24px 20px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .jar-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .jar-name {
+      font-size: 1.25rem;
+      font-weight: 700;
+    }
+
+    .jar-total {
+      font-size: 2.4rem;
+      font-weight: 800;
+      color: var(--gold);
+      letter-spacing: -1px;
+    }
+
+    .jar-stats {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .hit-btn {
+      border: none;
+      border-radius: 14px;
+      padding: 18px;
+      font-size: 1.05rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      transition: transform 0.1s, opacity 0.15s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hit-btn:active {
+      transform: scale(0.97);
+    }
+
+    .hit-btn.free {
+      background: linear-gradient(135deg, var(--green), #0d7a46);
+      color: #fff;
+    }
+
+    .hit-btn.paid {
+      background: linear-gradient(135deg, var(--accent), #c0392b);
+      color: #fff;
+    }
+
+    .hit-btn .btn-label { flex: 1; text-align: left; }
+    .hit-btn .btn-badge {
+      background: rgba(255,255,255,0.2);
+      border-radius: 8px;
+      padding: 4px 10px;
+      font-size: 0.85rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .free-clock {
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-align: right;
+    }
+
+    /* Hit animation ripple */
+    @keyframes ripple {
+      to { transform: scale(4); opacity: 0; }
+    }
+    .ripple-effect {
+      position: absolute;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.35);
+      width: 50px; height: 50px;
+      margin-top: -25px; margin-left: -25px;
+      animation: ripple 0.5s linear;
+      pointer-events: none;
+    }
+
+    /* Toast */
+    #toast {
+      position: fixed;
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
+      left: 50%; transform: translateX(-50%) translateY(80px);
+      background: #222;
+      color: #fff;
+      padding: 12px 22px;
+      border-radius: 40px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      box-shadow: var(--shadow);
+      transition: transform 0.3s ease;
+      z-index: 200;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* Modal */
+    .modal-backdrop {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 100;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .modal-backdrop.open { display: flex; }
+
+    .modal {
+      background: var(--card);
+      border-radius: var(--radius) var(--radius) 0 0;
+      padding: 24px 20px calc(env(safe-area-inset-bottom, 0px) + 24px);
+      width: 100%;
+      max-width: 480px;
+      max-height: 90dvh;
+      overflow-y: auto;
+    }
+
+    .modal h2 {
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal h2 button {
+      background: none; border: none; color: var(--muted);
+      font-size: 1.5rem; cursor: pointer; line-height: 1;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .form-group input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid #2a2a4e;
+      border-radius: 10px;
+      color: var(--text);
+      padding: 12px 14px;
+      font-size: 1rem;
+    }
+
+    .form-group input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .section-title {
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin: 20px 0 10px;
+    }
+
+    .modal-btn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      margin-bottom: 10px;
+      transition: opacity 0.15s;
+    }
+    .modal-btn:active { opacity: 0.8; }
+
+    .btn-primary   { background: var(--accent); color: #fff; }
+    .btn-secondary { background: #2a2a4e; color: var(--text); }
+    .btn-warning   { background: #e67e22; color: #fff; }
+    .btn-danger    { background: #7f1d1d; color: #fff; }
+    .btn-green     { background: var(--green); color: #fff; }
+
+    .sheets-status {
+      font-size: 0.75rem;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: var(--bg);
+      margin-bottom: 12px;
+    }
+
+    .log-preview {
+      font-size: 0.7rem;
+      color: var(--muted);
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 10px;
+      max-height: 120px;
+      overflow-y: auto;
+      font-family: monospace;
+    }
+
+    /* Sheets config field */
+    .sheets-url-note {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 6px;
+      line-height: 1.4;
+    }
+
+    @media (min-width: 480px) {
+      main { flex-direction: row; }
+      .jar-card { flex: 1; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>💰 Swear <span>Jar</span></h1>
+  <div class="header-actions">
+    <button class="icon-btn" id="syncBtn" title="Sync now">☁️</button>
+    <button class="icon-btn" id="settingsBtn" title="Settings">⚙️</button>
+  </div>
+</header>
+
+<div class="sync-status" id="syncStatus">Offline</div>
+
+<main>
+  <div class="jar-card" id="card-robert">
+    <div class="jar-header">
+      <div>
+        <div class="jar-name" id="name-robert">Robert</div>
+        <div class="jar-stats" id="stats-robert">0 hits total</div>
+      </div>
+      <div class="jar-total" id="total-robert">$0</div>
+    </div>
+    <button class="hit-btn free" id="hit-robert" onclick="handleHit('robert', event)">
+      <span class="btn-label">Hit!</span>
+      <span class="btn-badge" id="badge-robert">FREE</span>
+    </button>
+    <div class="free-clock" id="clock-robert"></div>
+  </div>
+
+  <div class="jar-card" id="card-tingting">
+    <div class="jar-header">
+      <div>
+        <div class="jar-name" id="name-tingting">Tingting</div>
+        <div class="jar-stats" id="stats-tingting">0 hits total</div>
+      </div>
+      <div class="jar-total" id="total-tingting">$0</div>
+    </div>
+    <button class="hit-btn free" id="hit-tingting" onclick="handleHit('tingting', event)">
+      <span class="btn-label">Hit!</span>
+      <span class="btn-badge" id="badge-tingting">FREE</span>
+    </button>
+    <div class="free-clock" id="clock-tingting"></div>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<!-- Settings Modal -->
+<div class="modal-backdrop" id="settingsModal" onclick="closeModalOnBackdrop(event)">
+  <div class="modal">
+    <h2>Settings ⚙️ <button onclick="closeSettings()">×</button></h2>
+
+    <div class="form-group">
+      <label>Person 1 Name</label>
+      <input id="set-name-robert" type="text" placeholder="Robert">
+    </div>
+    <div class="form-group">
+      <label>Person 2 Name</label>
+      <input id="set-name-tingting" type="text" placeholder="Tingting">
+    </div>
+    <div class="form-group">
+      <label>Per-hit amount ($)</label>
+      <input id="set-amount" type="number" min="1" step="1" placeholder="10">
+    </div>
+
+    <button class="modal-btn btn-primary" onclick="saveSettings()">Save Names & Amount</button>
+
+    <div class="section-title">Jar Management</div>
+
+    <div class="form-group">
+      <label>Set Person 1 total to ($)</label>
+      <input id="set-total-robert" type="number" min="0" step="1" placeholder="Current value">
+    </div>
+    <div class="form-group">
+      <label>Set Person 2 total to ($)</label>
+      <input id="set-total-tingting" type="number" min="0" step="1" placeholder="Current value">
+    </div>
+    <button class="modal-btn btn-warning" onclick="setTotals()">Set Totals</button>
+    <button class="modal-btn btn-danger" onclick="resetJar()">🗑️ Reset Both to $0</button>
+
+    <div class="section-title">Google Sheets Sync</div>
+    <div class="sheets-status" id="sheetsStatus">Not configured</div>
+    <div class="form-group">
+      <label>Apps Script Web App URL</label>
+      <input id="set-sheets-url" type="url" placeholder="https://script.google.com/macros/s/…/exec">
+      <div class="sheets-url-note">See SETUP.md for how to deploy the Google Sheets backend.</div>
+    </div>
+    <button class="modal-btn btn-green" onclick="saveSheetUrl()">Save & Test Sheets</button>
+
+    <div class="section-title">Log</div>
+    <div class="log-preview" id="logPreview">(no hits yet)</div>
+    <button class="modal-btn btn-secondary" onclick="exportCSV()">📥 Export CSV</button>
+  </div>
+</div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────────────
+
+const DEFAULT_STATE = {
+  names: { robert: 'Robert', tingting: 'Tingting' },
+  totals: { robert: 0, tingting: 0 },
+  hitAmount: 10,
+  firstHitToday: { robert: null, tingting: null }, // ISO timestamp of first hit in current 24h window
+  log: [], // { ts, person, amount }
+  sheetsUrl: ''
+};
+
+let state = loadState();
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem('swear-jar-state');
+    if (raw) return { ...DEFAULT_STATE, ...JSON.parse(raw) };
+  } catch(e) {}
+  return { ...DEFAULT_STATE };
+}
+
+function saveState() {
+  localStorage.setItem('swear-jar-state', JSON.stringify(state));
+}
+
+// ─── 24h window logic ────────────────────────────────────────────────────────
+
+function isFreeHitAvailable(person) {
+  const ts = state.firstHitToday[person];
+  if (!ts) return true;
+  const now = Date.now();
+  const first = new Date(ts).getTime();
+  return (now - first) >= 24 * 60 * 60 * 1000;
+}
+
+function timeUntilReset(person) {
+  const ts = state.firstHitToday[person];
+  if (!ts) return null;
+  const first = new Date(ts).getTime();
+  const resetAt = first + 24 * 60 * 60 * 1000;
+  const diff = resetAt - Date.now();
+  if (diff <= 0) return null;
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  return `${h}h ${m}m until free hit resets`;
+}
+
+// ─── Audio: cha-ching via Web Audio API ──────────────────────────────────────
+
+let audioCtx = null;
+
+function playChaChingSound() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = audioCtx;
+    const now = ctx.currentTime;
+
+    // Coin drop: short high beep + shimmer
+    const gainMaster = ctx.createGain();
+    gainMaster.connect(ctx.destination);
+    gainMaster.gain.setValueAtTime(0.0, now);
+    gainMaster.gain.linearRampToValueAtTime(0.6, now + 0.01);
+    gainMaster.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+
+    // Main "cha-ching" tone
+    const osc1 = ctx.createOscillator();
+    osc1.type = 'triangle';
+    osc1.frequency.setValueAtTime(1800, now);
+    osc1.frequency.exponentialRampToValueAtTime(900, now + 0.15);
+    osc1.connect(gainMaster);
+    osc1.start(now);
+    osc1.stop(now + 0.3);
+
+    // Second harmonic shimmer
+    const osc2 = ctx.createOscillator();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(2600, now + 0.05);
+    osc2.frequency.exponentialRampToValueAtTime(1400, now + 0.35);
+    const gain2 = ctx.createGain();
+    gain2.gain.setValueAtTime(0.3, now + 0.05);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.05);
+    osc2.stop(now + 0.6);
+
+    // Trailing jingle
+    [0, 100, 200, 320].forEach((delayMs, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      const freq = [1200, 1500, 1800, 2100][i];
+      o.type = 'sine';
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.15, now + delayMs/1000);
+      g.gain.exponentialRampToValueAtTime(0.001, now + delayMs/1000 + 0.25);
+      o.connect(g);
+      g.connect(ctx.destination);
+      o.start(now + delayMs/1000);
+      o.stop(now + delayMs/1000 + 0.25);
+    });
+  } catch(e) {
+    console.warn('Audio failed:', e);
+  }
+}
+
+// ─── Hit logic ───────────────────────────────────────────────────────────────
+
+function handleHit(person, event) {
+  const isFree = isFreeHitAvailable(person);
+  const amount = isFree ? 0 : state.hitAmount;
+
+  // Ripple effect
+  const btn = event.currentTarget;
+  const ripple = document.createElement('span');
+  ripple.className = 'ripple-effect';
+  const rect = btn.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  ripple.style.left = x + 'px';
+  ripple.style.top = y + 'px';
+  btn.appendChild(ripple);
+  setTimeout(() => ripple.remove(), 600);
+
+  // Update state
+  if (isFree) {
+    state.firstHitToday[person] = new Date().toISOString();
+  }
+  state.totals[person] += amount;
+
+  const logEntry = { ts: new Date().toISOString(), person: state.names[person], amount };
+  state.log.push(logEntry);
+  saveState();
+
+  // Sound on paid hit
+  if (amount > 0) {
+    playChaChingSound();
+    showToast(`+$${amount} added to ${state.names[person]}'s jar 💸`);
+  } else {
+    showToast(`Free hit used! (${state.names[person]}) 🆓`);
+  }
+
+  updateUI();
+  syncToSheets();
+}
+
+// ─── UI rendering ────────────────────────────────────────────────────────────
+
+function updateUI() {
+  ['robert', 'tingting'].forEach(p => {
+    const isFree = isFreeHitAvailable(p);
+    const name = state.names[p];
+    const total = state.totals[p];
+
+    document.getElementById(`name-${p}`).textContent = name;
+    document.getElementById(`total-${p}`).textContent = `$${total}`;
+
+    const hitCount = state.log.filter(e => e.person === name).length;
+    document.getElementById(`stats-${p}`).textContent =
+      `${hitCount} hit${hitCount !== 1 ? 's' : ''} total`;
+
+    const btn = document.getElementById(`hit-${p}`);
+    const badge = document.getElementById(`badge-${p}`);
+
+    if (isFree) {
+      btn.className = 'hit-btn free';
+      badge.textContent = 'FREE';
+      document.getElementById(`clock-${p}`).textContent = '';
+    } else {
+      btn.className = 'hit-btn paid';
+      badge.textContent = `$${state.hitAmount}`;
+      document.getElementById(`clock-${p}`).textContent = timeUntilReset(p) || '';
+    }
+  });
+}
+
+function updateLogPreview() {
+  const el = document.getElementById('logPreview');
+  if (state.log.length === 0) {
+    el.textContent = '(no hits yet)';
+    return;
+  }
+  const lines = state.log.slice(-20).reverse().map(e => {
+    const d = new Date(e.ts);
+    const date = d.toLocaleDateString();
+    const time = d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    const amt = e.amount === 0 ? 'FREE' : `$${e.amount}`;
+    return `${date} ${time}  ${e.person}  ${amt}`;
+  });
+  el.textContent = lines.join('\n');
+}
+
+// ─── Toast ───────────────────────────────────────────────────────────────────
+
+let toastTimer = null;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// ─── Settings modal ──────────────────────────────────────────────────────────
+
+function openSettings() {
+  document.getElementById('set-name-robert').value  = state.names.robert;
+  document.getElementById('set-name-tingting').value = state.names.tingting;
+  document.getElementById('set-amount').value        = state.hitAmount;
+  document.getElementById('set-total-robert').value  = state.totals.robert;
+  document.getElementById('set-total-tingting').value = state.totals.tingting;
+  document.getElementById('set-sheets-url').value    = state.sheetsUrl || '';
+  updateSheetsStatus();
+  updateLogPreview();
+  document.getElementById('settingsModal').classList.add('open');
+}
+
+function closeSettings() {
+  document.getElementById('settingsModal').classList.remove('open');
+}
+
+function closeModalOnBackdrop(e) {
+  if (e.target === document.getElementById('settingsModal')) closeSettings();
+}
+
+function saveSettings() {
+  const n1 = document.getElementById('set-name-robert').value.trim() || 'Robert';
+  const n2 = document.getElementById('set-name-tingting').value.trim() || 'Tingting';
+  const amt = parseInt(document.getElementById('set-amount').value) || 10;
+  state.names.robert   = n1;
+  state.names.tingting = n2;
+  state.hitAmount = amt;
+  saveState();
+  updateUI();
+  showToast('Settings saved!');
+  closeSettings();
+}
+
+function setTotals() {
+  const r = parseInt(document.getElementById('set-total-robert').value);
+  const t = parseInt(document.getElementById('set-total-tingting').value);
+  if (!isNaN(r) && r >= 0) state.totals.robert = r;
+  if (!isNaN(t) && t >= 0) state.totals.tingting = t;
+  saveState();
+  updateUI();
+  showToast('Totals updated!');
+  closeSettings();
+}
+
+function resetJar() {
+  if (!confirm('Reset both jars to $0? This cannot be undone.')) return;
+  state.totals.robert = 0;
+  state.totals.tingting = 0;
+  state.log.push({ ts: new Date().toISOString(), person: 'SYSTEM', amount: 0, note: 'Manual reset' });
+  saveState();
+  updateUI();
+  showToast('Jars reset to $0 🗑️');
+  closeSettings();
+}
+
+// ─── Google Sheets sync ──────────────────────────────────────────────────────
+
+let pendingSync = false;
+
+async function syncToSheets() {
+  if (!state.sheetsUrl) return;
+  if (pendingSync) return;
+  pendingSync = true;
+  updateSyncStatus('syncing', '☁️ Syncing…');
+
+  try {
+    // Send last log entry + current totals
+    const lastEntry = state.log[state.log.length - 1];
+    const payload = {
+      action: 'logHit',
+      ts: lastEntry.ts,
+      person: lastEntry.person,
+      amount: lastEntry.amount,
+      totalRobert: state.totals.robert,
+      totalTingting: state.totals.tingting
+    };
+
+    const resp = await fetch(state.sheetsUrl, {
+      method: 'POST',
+      mode: 'no-cors', // Apps Script requires no-cors for cross-origin POST
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(payload)
+    });
+    // no-cors gives opaque response; assume success if no throw
+    updateSyncStatus('synced', '✅ Synced');
+  } catch(e) {
+    updateSyncStatus('error', '⚠️ Sync failed (offline?)');
+  } finally {
+    pendingSync = false;
+    setTimeout(() => updateSyncStatus('', ''), 4000);
+  }
+}
+
+async function saveSheetUrl() {
+  const url = document.getElementById('set-sheets-url').value.trim();
+  state.sheetsUrl = url;
+  saveState();
+  if (url) {
+    updateSheetsStatus('Testing…');
+    try {
+      await fetch(url + '?action=ping', { method: 'GET', mode: 'no-cors' });
+      updateSheetsStatus('✅ URL saved. (no-cors; assume OK)');
+    } catch(e) {
+      updateSheetsStatus('⚠️ Could not reach URL');
+    }
+  } else {
+    updateSheetsStatus('Not configured');
+  }
+}
+
+function updateSheetsStatus(msg) {
+  const el = document.getElementById('sheetsStatus');
+  if (msg !== undefined) { el.textContent = msg; return; }
+  el.textContent = state.sheetsUrl ? `URL: ${state.sheetsUrl.slice(0,50)}…` : 'Not configured';
+}
+
+function updateSyncStatus(cls, msg) {
+  const el = document.getElementById('syncStatus');
+  el.className = 'sync-status ' + cls;
+  el.textContent = msg;
+}
+
+// ─── CSV Export ──────────────────────────────────────────────────────────────
+
+function exportCSV() {
+  const rows = [['Timestamp','Person','Amount']];
+  state.log.forEach(e => {
+    if (e.person === 'SYSTEM') return;
+    rows.push([e.ts, e.person, e.amount]);
+  });
+  const csv = rows.map(r => r.join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `swear-jar-log-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('CSV exported!');
+}
+
+// ─── Online/offline status ───────────────────────────────────────────────────
+
+function updateOnlineStatus() {
+  if (navigator.onLine) {
+    updateSyncStatus('', '');
+  } else {
+    updateSyncStatus('', '📴 Offline — changes saved locally');
+  }
+}
+
+window.addEventListener('online',  updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
+
+// ─── Clock refresh ────────────────────────────────────────────────────────────
+
+setInterval(updateUI, 60000); // refresh free-hit countdown every minute
+
+// ─── PWA service worker ──────────────────────────────────────────────────────
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(console.warn);
+  });
+}
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+
+document.getElementById('settingsBtn').addEventListener('click', openSettings);
+document.getElementById('syncBtn').addEventListener('click', () => {
+  syncToSheets();
+  showToast('Sync requested…');
+});
+
+updateUI();
+updateOnlineStatus();
+</script>
+</body>
+</html>
