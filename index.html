@@ -412,7 +412,7 @@ const DEFAULT_STATE = {
   names: { robert: 'Robert', tingting: 'Tingting' },
   totals: { robert: 0, tingting: 0 },
   hitAmount: 10,
-  firstHitToday: { robert: null, tingting: null }, // ISO timestamp of most recent free hit in current 24h window
+  firstHitToday: { robert: null, tingting: null }, // ISO timestamp of most recent free hit today (resets at local midnight)
   log: [], // { ts, person, amount, synced }
   sheetsUrl: ''
 };
@@ -448,8 +448,7 @@ function getPersonKey(name) {
 // ─── Recompute totals + free-hit timer from log (log-driven state) ────────────
 
 function recomputeFromLog() {
-  const now = Date.now();
-  const WINDOW = 24 * 60 * 60 * 1000;
+  const todayStr = new Date().toLocaleDateString();
 
   const totals        = { robert: 0, tingting: 0 };
   const lastFreeHitTs = { robert: null, tingting: null };
@@ -471,10 +470,10 @@ function recomputeFromLog() {
 
   state.totals = totals;
 
-  // firstHitToday = most recent free-hit ts if within 24h, else null (free hit available)
+  // firstHitToday = most recent free-hit ts if it was TODAY (local calendar day), else null (free hit available)
   for (const key of ['robert', 'tingting']) {
     const ts = lastFreeHitTs[key];
-    if (ts && (now - new Date(ts).getTime()) < WINDOW) {
+    if (ts && new Date(ts).toLocaleDateString() === todayStr) {
       state.firstHitToday[key] = ts;
     } else {
       state.firstHitToday[key] = null;
@@ -487,18 +486,22 @@ function recomputeFromLog() {
 function isFreeHitAvailable(person) {
   const ts = state.firstHitToday[person];
   if (!ts) return true;
-  return (Date.now() - new Date(ts).getTime()) >= 24 * 60 * 60 * 1000;
+  // Free hit resets at midnight (calendar-day boundary, local time)
+  return new Date(ts).toLocaleDateString() !== new Date().toLocaleDateString();
 }
 
 function timeUntilReset(person) {
   const ts = state.firstHitToday[person];
   if (!ts) return null;
-  const resetAt = new Date(ts).getTime() + 24 * 60 * 60 * 1000;
-  const diff = resetAt - Date.now();
+  if (isFreeHitAvailable(person)) return null;
+  // Calculate ms until local midnight
+  const now = new Date();
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
+  const diff = midnight.getTime() - now.getTime();
   if (diff <= 0) return null;
   const h = Math.floor(diff / 3600000);
   const m = Math.floor((diff % 3600000) / 60000);
-  return `${h}h ${m}m until free hit resets`;
+  return `${h}h ${m}m until midnight reset`;
 }
 
 // ─── Audio: cha-ching via Web Audio API ──────────────────────────────────────
