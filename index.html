@@ -9,7 +9,6 @@
   <meta name="theme-color" content="#1a1a2e">
   <title>Swear Jar 💰</title>
   <link rel="manifest" href="manifest.json">
-  <!-- Apple touch icons (inlined SVG as data URIs since we have no external files) -->
   <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%231a1a2e'/%3E%3Ctext y='.9em' font-size='80' x='10'%3E💰%3C/text%3E%3C/svg%3E">
   <style>
     :root {
@@ -134,9 +133,7 @@
       overflow: hidden;
     }
 
-    .hit-btn:active {
-      transform: scale(0.97);
-    }
+    .hit-btn:active { transform: scale(0.97); }
 
     .hit-btn.free {
       background: linear-gradient(135deg, var(--green), #0d7a46);
@@ -164,7 +161,6 @@
       text-align: right;
     }
 
-    /* Hit animation ripple */
     @keyframes ripple {
       to { transform: scale(4); opacity: 0; }
     }
@@ -178,7 +174,6 @@
       pointer-events: none;
     }
 
-    /* Toast */
     #toast {
       position: fixed;
       bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
@@ -197,7 +192,6 @@
     }
     #toast.show { transform: translateX(-50%) translateY(0); }
 
-    /* Modal */
     .modal-backdrop {
       display: none;
       position: fixed; inset: 0;
@@ -232,9 +226,7 @@
       font-size: 1.5rem; cursor: pointer; line-height: 1;
     }
 
-    .form-group {
-      margin-bottom: 16px;
-    }
+    .form-group { margin-bottom: 16px; }
 
     .form-group label {
       display: block;
@@ -306,7 +298,6 @@
       font-family: monospace;
     }
 
-    /* Sheets config field */
     .sheets-url-note {
       font-size: 0.72rem;
       color: var(--muted);
@@ -330,7 +321,7 @@
   </div>
 </header>
 
-<div class="sync-status" id="syncStatus">Offline</div>
+<div class="sync-status" id="syncStatus"></div>
 
 <main>
   <div class="jar-card" id="card-robert">
@@ -404,7 +395,7 @@
     <div class="form-group">
       <label>Apps Script Web App URL</label>
       <input id="set-sheets-url" type="url" placeholder="https://script.google.com/macros/s/…/exec">
-      <div class="sheets-url-note">See SETUP.md for how to deploy the Google Sheets backend.</div>
+      <div class="sheets-url-note">See SETUP.md for how to deploy. After updating the script, re-deploy as a <strong>new version</strong> to enable pull sync.</div>
     </div>
     <button class="modal-btn btn-green" onclick="saveSheetUrl()">Save & Test Sheets</button>
 
@@ -421,8 +412,8 @@ const DEFAULT_STATE = {
   names: { robert: 'Robert', tingting: 'Tingting' },
   totals: { robert: 0, tingting: 0 },
   hitAmount: 10,
-  firstHitToday: { robert: null, tingting: null }, // ISO timestamp of first hit in current 24h window
-  log: [], // { ts, person, amount }
+  firstHitToday: { robert: null, tingting: null }, // ISO timestamp of most recent free hit in current 24h window
+  log: [], // { ts, person, amount, synced }
   sheetsUrl: ''
 };
 
@@ -440,21 +431,69 @@ function saveState() {
   localStorage.setItem('swear-jar-state', JSON.stringify(state));
 }
 
+// ─── Person name → key mapping ────────────────────────────────────────────────
+
+function getPersonKey(name) {
+  if (!name) return null;
+  // Exact match first
+  if (name === state.names.robert)   return 'robert';
+  if (name === state.names.tingting) return 'tingting';
+  // Case-insensitive fallback
+  const lower = name.toLowerCase();
+  if (state.names.robert.toLowerCase()   === lower) return 'robert';
+  if (state.names.tingting.toLowerCase() === lower) return 'tingting';
+  return null;
+}
+
+// ─── Recompute totals + free-hit timer from log (log-driven state) ────────────
+
+function recomputeFromLog() {
+  const now = Date.now();
+  const WINDOW = 24 * 60 * 60 * 1000;
+
+  const totals        = { robert: 0, tingting: 0 };
+  const lastFreeHitTs = { robert: null, tingting: null };
+
+  for (const entry of state.log) {
+    if (!entry.person || entry.person === 'SYSTEM') continue;
+    const key = getPersonKey(entry.person);
+    if (!key) continue;
+
+    totals[key] += Number(entry.amount) || 0;
+
+    if (Number(entry.amount) === 0) {
+      // Track most recent free-hit timestamp per person
+      if (!lastFreeHitTs[key] || entry.ts > lastFreeHitTs[key]) {
+        lastFreeHitTs[key] = entry.ts;
+      }
+    }
+  }
+
+  state.totals = totals;
+
+  // firstHitToday = most recent free-hit ts if within 24h, else null (free hit available)
+  for (const key of ['robert', 'tingting']) {
+    const ts = lastFreeHitTs[key];
+    if (ts && (now - new Date(ts).getTime()) < WINDOW) {
+      state.firstHitToday[key] = ts;
+    } else {
+      state.firstHitToday[key] = null;
+    }
+  }
+}
+
 // ─── 24h window logic ────────────────────────────────────────────────────────
 
 function isFreeHitAvailable(person) {
   const ts = state.firstHitToday[person];
   if (!ts) return true;
-  const now = Date.now();
-  const first = new Date(ts).getTime();
-  return (now - first) >= 24 * 60 * 60 * 1000;
+  return (Date.now() - new Date(ts).getTime()) >= 24 * 60 * 60 * 1000;
 }
 
 function timeUntilReset(person) {
   const ts = state.firstHitToday[person];
   if (!ts) return null;
-  const first = new Date(ts).getTime();
-  const resetAt = first + 24 * 60 * 60 * 1000;
+  const resetAt = new Date(ts).getTime() + 24 * 60 * 60 * 1000;
   const diff = resetAt - Date.now();
   if (diff <= 0) return null;
   const h = Math.floor(diff / 3600000);
@@ -472,14 +511,12 @@ function playChaChingSound() {
     const ctx = audioCtx;
     const now = ctx.currentTime;
 
-    // Coin drop: short high beep + shimmer
     const gainMaster = ctx.createGain();
     gainMaster.connect(ctx.destination);
     gainMaster.gain.setValueAtTime(0.0, now);
     gainMaster.gain.linearRampToValueAtTime(0.6, now + 0.01);
     gainMaster.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
 
-    // Main "cha-ching" tone
     const osc1 = ctx.createOscillator();
     osc1.type = 'triangle';
     osc1.frequency.setValueAtTime(1800, now);
@@ -488,7 +525,6 @@ function playChaChingSound() {
     osc1.start(now);
     osc1.stop(now + 0.3);
 
-    // Second harmonic shimmer
     const osc2 = ctx.createOscillator();
     osc2.type = 'sine';
     osc2.frequency.setValueAtTime(2600, now + 0.05);
@@ -501,7 +537,6 @@ function playChaChingSound() {
     osc2.start(now + 0.05);
     osc2.stop(now + 0.6);
 
-    // Trailing jingle
     [0, 100, 200, 320].forEach((delayMs, i) => {
       const o = ctx.createOscillator();
       const g = ctx.createGain();
@@ -523,32 +558,33 @@ function playChaChingSound() {
 // ─── Hit logic ───────────────────────────────────────────────────────────────
 
 function handleHit(person, event) {
-  const isFree = isFreeHitAvailable(person);
-  const amount = isFree ? 0 : state.hitAmount;
+  const isFree  = isFreeHitAvailable(person);
+  const amount  = isFree ? 0 : state.hitAmount;
 
   // Ripple effect
   const btn = event.currentTarget;
   const ripple = document.createElement('span');
   ripple.className = 'ripple-effect';
   const rect = btn.getBoundingClientRect();
-  const x = event.clientX - rect.left;
-  const y = event.clientY - rect.top;
-  ripple.style.left = x + 'px';
-  ripple.style.top = y + 'px';
+  ripple.style.left = (event.clientX - rect.left) + 'px';
+  ripple.style.top  = (event.clientY - rect.top) + 'px';
   btn.appendChild(ripple);
   setTimeout(() => ripple.remove(), 600);
 
-  // Update state
-  if (isFree) {
-    state.firstHitToday[person] = new Date().toISOString();
-  }
-  state.totals[person] += amount;
-
-  const logEntry = { ts: new Date().toISOString(), person: state.names[person], amount };
+  // Log the hit (synced: false → will be pushed on next sync)
+  const logEntry = {
+    ts:     new Date().toISOString(),
+    person: state.names[person],
+    amount,
+    synced: false
+  };
   state.log.push(logEntry);
+
+  // Recompute totals + free-hit timer from full log (keeps single source of truth)
+  recomputeFromLog();
   saveState();
 
-  // Sound on paid hit
+  // Sound + toast
   if (amount > 0) {
     playChaChingSound();
     showToast(`+$${amount} added to ${state.names[person]}'s jar 💸`);
@@ -557,33 +593,33 @@ function handleHit(person, event) {
   }
 
   updateUI();
-  syncToSheets();
+  syncBidirectional(); // push & pull
 }
 
-// ─── UI rendering ────────────────────────────────────────────────────────────
+// ─── UI rendering ─────────────────────────────────────────────────────────────
 
 function updateUI() {
   ['robert', 'tingting'].forEach(p => {
     const isFree = isFreeHitAvailable(p);
-    const name = state.names[p];
-    const total = state.totals[p];
+    const name   = state.names[p];
+    const total  = state.totals[p];
 
-    document.getElementById(`name-${p}`).textContent = name;
+    document.getElementById(`name-${p}`).textContent  = name;
     document.getElementById(`total-${p}`).textContent = `$${total}`;
 
-    const hitCount = state.log.filter(e => e.person === name).length;
+    const hitCount = state.log.filter(e => getPersonKey(e.person) === p).length;
     document.getElementById(`stats-${p}`).textContent =
       `${hitCount} hit${hitCount !== 1 ? 's' : ''} total`;
 
-    const btn = document.getElementById(`hit-${p}`);
+    const btn   = document.getElementById(`hit-${p}`);
     const badge = document.getElementById(`badge-${p}`);
 
     if (isFree) {
-      btn.className = 'hit-btn free';
+      btn.className     = 'hit-btn free';
       badge.textContent = 'FREE';
       document.getElementById(`clock-${p}`).textContent = '';
     } else {
-      btn.className = 'hit-btn paid';
+      btn.className     = 'hit-btn paid';
       badge.textContent = `$${state.hitAmount}`;
       document.getElementById(`clock-${p}`).textContent = timeUntilReset(p) || '';
     }
@@ -592,18 +628,17 @@ function updateUI() {
 
 function updateLogPreview() {
   const el = document.getElementById('logPreview');
-  if (state.log.length === 0) {
-    el.textContent = '(no hits yet)';
-    return;
-  }
-  const lines = state.log.slice(-20).reverse().map(e => {
-    const d = new Date(e.ts);
+  const hits = state.log.filter(e => e.person !== 'SYSTEM');
+  if (hits.length === 0) { el.textContent = '(no hits yet)'; return; }
+  const lines = hits.slice(-20).reverse().map(e => {
+    const d    = new Date(e.ts);
     const date = d.toLocaleDateString();
-    const time = d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    const amt = e.amount === 0 ? 'FREE' : `$${e.amount}`;
-    return `${date} ${time}  ${e.person}  ${amt}`;
+    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const amt  = e.amount === 0 ? 'FREE' : `$${e.amount}`;
+    const flag = e.synced ? '' : ' *';
+    return `${date} ${time}  ${e.person}  ${amt}${flag}`;
   });
-  el.textContent = lines.join('\n');
+  el.textContent = lines.join('\n') + (hits.some(e => !e.synced) ? '\n(* = not yet synced)' : '');
 }
 
 // ─── Toast ───────────────────────────────────────────────────────────────────
@@ -620,13 +655,13 @@ function showToast(msg) {
 // ─── Settings modal ──────────────────────────────────────────────────────────
 
 function openSettings() {
-  document.getElementById('set-name-robert').value  = state.names.robert;
-  document.getElementById('set-name-tingting').value = state.names.tingting;
-  document.getElementById('set-amount').value        = state.hitAmount;
-  document.getElementById('set-total-robert').value  = state.totals.robert;
+  document.getElementById('set-name-robert').value    = state.names.robert;
+  document.getElementById('set-name-tingting').value  = state.names.tingting;
+  document.getElementById('set-amount').value         = state.hitAmount;
+  document.getElementById('set-total-robert').value   = state.totals.robert;
   document.getElementById('set-total-tingting').value = state.totals.tingting;
-  document.getElementById('set-sheets-url').value    = state.sheetsUrl || '';
-  updateSheetsStatus();
+  document.getElementById('set-sheets-url').value     = state.sheetsUrl || '';
+  updateSheetsStatusEl();
   updateLogPreview();
   document.getElementById('settingsModal').classList.add('open');
 }
@@ -640,12 +675,12 @@ function closeModalOnBackdrop(e) {
 }
 
 function saveSettings() {
-  const n1 = document.getElementById('set-name-robert').value.trim() || 'Robert';
-  const n2 = document.getElementById('set-name-tingting').value.trim() || 'Tingting';
+  const n1  = document.getElementById('set-name-robert').value.trim()   || 'Robert';
+  const n2  = document.getElementById('set-name-tingting').value.trim() || 'Tingting';
   const amt = parseInt(document.getElementById('set-amount').value) || 10;
   state.names.robert   = n1;
   state.names.tingting = n2;
-  state.hitAmount = amt;
+  state.hitAmount      = amt;
   saveState();
   updateUI();
   showToast('Settings saved!');
@@ -653,10 +688,21 @@ function saveSettings() {
 }
 
 function setTotals() {
-  const r = parseInt(document.getElementById('set-total-robert').value);
-  const t = parseInt(document.getElementById('set-total-tingting').value);
-  if (!isNaN(r) && r >= 0) state.totals.robert = r;
-  if (!isNaN(t) && t >= 0) state.totals.tingting = t;
+  // Setting totals manually: add a synthetic adjustment entry to the log
+  const newR = parseInt(document.getElementById('set-total-robert').value);
+  const newT = parseInt(document.getElementById('set-total-tingting').value);
+  const ts   = new Date().toISOString();
+
+  if (!isNaN(newR) && newR >= 0) {
+    const diff = newR - state.totals.robert;
+    state.log.push({ ts, person: state.names.robert, amount: diff, note: 'manual-set', synced: false });
+  }
+  if (!isNaN(newT) && newT >= 0) {
+    const ts2 = new Date(Date.now() + 1).toISOString(); // distinct ts
+    const diff = newT - state.totals.tingting;
+    state.log.push({ ts: ts2, person: state.names.tingting, amount: diff, note: 'manual-set', synced: false });
+  }
+  recomputeFromLog();
   saveState();
   updateUI();
   showToast('Totals updated!');
@@ -665,50 +711,134 @@ function setTotals() {
 
 function resetJar() {
   if (!confirm('Reset both jars to $0? This cannot be undone.')) return;
-  state.totals.robert = 0;
-  state.totals.tingting = 0;
-  state.log.push({ ts: new Date().toISOString(), person: 'SYSTEM', amount: 0, note: 'Manual reset' });
+  const ts = new Date().toISOString();
+  // Add negative entries that bring totals to 0, then recompute
+  const adjR = -state.totals.robert;
+  const adjT = -state.totals.tingting;
+  state.log.push({ ts, person: state.names.robert, amount: adjR, note: 'reset', synced: false });
+  state.log.push({ ts: new Date(Date.now() + 1).toISOString(), person: state.names.tingting, amount: adjT, note: 'reset', synced: false });
+  state.firstHitToday = { robert: null, tingting: null };
+  recomputeFromLog();
   saveState();
   updateUI();
   showToast('Jars reset to $0 🗑️');
   closeSettings();
 }
 
-// ─── Google Sheets sync ──────────────────────────────────────────────────────
+// ─── Google Sheets bidirectional sync ─────────────────────────────────────────
 
 let pendingSync = false;
 
-async function syncToSheets() {
+/**
+ * Full bidirectional sync:
+ * 1. Push any unsynced local entries (POST, no-cors)
+ * 2. Pull all entries from Sheets (GET, cors)
+ * 3. Merge + deduplicate by ts
+ * 4. Recompute totals + firstHitToday from merged log
+ */
+async function syncBidirectional() {
   if (!state.sheetsUrl) return;
   if (pendingSync) return;
   pendingSync = true;
   updateSyncStatus('syncing', '☁️ Syncing…');
 
   try {
-    // Send last log entry + current totals
-    const lastEntry = state.log[state.log.length - 1];
-    const payload = {
-      action: 'logHit',
-      ts: lastEntry.ts,
-      person: lastEntry.person,
-      amount: lastEntry.amount,
-      totalRobert: state.totals.robert,
-      totalTingting: state.totals.tingting
-    };
+    // ── Step 1: Push unsynced entries ────────────────────────────────────────
+    const unsynced = state.log.filter(e => !e.synced && e.person !== 'SYSTEM');
+    if (unsynced.length > 0) {
+      try {
+        await fetch(state.sheetsUrl, {
+          method: 'POST',
+          mode:   'no-cors',  // Apps Script POST requires no-cors
+          headers: { 'Content-Type': 'text/plain' },
+          body:   JSON.stringify(
+            unsynced.map(e => ({ ts: e.ts, person: e.person, amount: e.amount }))
+          )
+        });
+        // Mark as synced (no-cors → opaque response, assume success)
+        const pushTs = new Set(unsynced.map(e => e.ts));
+        state.log = state.log.map(e => pushTs.has(e.ts) ? { ...e, synced: true } : e);
+      } catch(pushErr) {
+        console.warn('Push failed:', pushErr);
+        // Continue to try pull anyway
+      }
+    }
 
-    const resp = await fetch(state.sheetsUrl, {
-      method: 'POST',
-      mode: 'no-cors', // Apps Script requires no-cors for cross-origin POST
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(payload)
-    });
-    // no-cors gives opaque response; assume success if no throw
-    updateSyncStatus('synced', '✅ Synced');
-  } catch(e) {
-    updateSyncStatus('error', '⚠️ Sync failed (offline?)');
+    // ── Step 2: Pull all entries ──────────────────────────────────────────────
+    let remoteLog = [];
+    try {
+      const resp = await fetch(state.sheetsUrl, {
+        method: 'GET',
+        mode:   'cors'
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.status === 'ok' && Array.isArray(data.log)) {
+          remoteLog = data.log;
+        }
+      }
+    } catch(pullErr) {
+      // GET CORS failed (older script without GET endpoint, or network)
+      console.warn('Pull failed (script may need updating):', pullErr);
+      // Still save whatever push we did
+      saveState();
+      updateUI();
+      const unsyncedCount = state.log.filter(e => !e.synced && e.person !== 'SYSTEM').length;
+      updateSyncStatus(
+        unsyncedCount === 0 ? 'synced' : 'error',
+        unsyncedCount === 0
+          ? '✅ Pushed (update script to enable full sync)'
+          : '⚠️ Push may have failed — check connection'
+      );
+      return;
+    }
+
+    // ── Step 3: Merge + deduplicate by ts ────────────────────────────────────
+    const byTs = new Map();
+
+    // Remote entries are already synced
+    for (const entry of remoteLog) {
+      if (!entry.ts) continue;
+      byTs.set(entry.ts, {
+        ts:     entry.ts,
+        person: entry.person,
+        amount: Number(entry.amount) || 0,
+        synced: true
+      });
+    }
+
+    // Local non-SYSTEM entries (don't overwrite remote copies)
+    for (const entry of state.log) {
+      if (!entry.ts || entry.person === 'SYSTEM') continue;
+      if (!byTs.has(entry.ts)) {
+        byTs.set(entry.ts, entry);
+      } else {
+        // Keep remote data; preserve local synced flag
+        byTs.set(entry.ts, { ...byTs.get(entry.ts), synced: true });
+      }
+    }
+
+    // Sort chronologically
+    const merged = Array.from(byTs.values()).sort((a, b) => a.ts.localeCompare(b.ts));
+
+    // Preserve SYSTEM entries from local log
+    const systemEntries = state.log.filter(e => e.person === 'SYSTEM');
+    state.log = [...merged, ...systemEntries].sort((a, b) => a.ts.localeCompare(b.ts));
+
+    // ── Step 4: Recompute from merged log ─────────────────────────────────────
+    recomputeFromLog();
+    saveState();
+    updateUI();
+
+    const total = merged.filter(e => getPersonKey(e.person)).length;
+    updateSyncStatus('synced', `✅ Synced — ${total} entries`);
+
+  } catch(err) {
+    console.error('Sync error:', err);
+    updateSyncStatus('error', '⚠️ Sync failed');
   } finally {
     pendingSync = false;
-    setTimeout(() => updateSyncStatus('', ''), 4000);
+    setTimeout(() => updateSyncStatus('', ''), 6000);
   }
 }
 
@@ -717,44 +847,53 @@ async function saveSheetUrl() {
   state.sheetsUrl = url;
   saveState();
   if (url) {
-    updateSheetsStatus('Testing…');
+    document.getElementById('sheetsStatus').textContent = 'Testing…';
     try {
-      await fetch(url + '?action=ping', { method: 'GET', mode: 'no-cors' });
-      updateSheetsStatus('✅ URL saved. (no-cors; assume OK)');
+      const resp = await fetch(url, { method: 'GET', mode: 'cors' });
+      const data = await resp.json();
+      if (data.status === 'ok') {
+        document.getElementById('sheetsStatus').textContent =
+          '✅ Connected! GET sync enabled.';
+      } else {
+        document.getElementById('sheetsStatus').textContent =
+          '⚠️ URL reached but returned unexpected response. Push-only mode.';
+      }
     } catch(e) {
-      updateSheetsStatus('⚠️ Could not reach URL');
+      // Could be old script version (no GET support), or CORS issue
+      document.getElementById('sheetsStatus').textContent =
+        '⚠️ Could not verify URL. Push may still work. Update script for full sync.';
     }
   } else {
-    updateSheetsStatus('Not configured');
+    document.getElementById('sheetsStatus').textContent = 'Not configured';
   }
 }
 
-function updateSheetsStatus(msg) {
+function updateSheetsStatusEl() {
   const el = document.getElementById('sheetsStatus');
-  if (msg !== undefined) { el.textContent = msg; return; }
-  el.textContent = state.sheetsUrl ? `URL: ${state.sheetsUrl.slice(0,50)}…` : 'Not configured';
+  el.textContent = state.sheetsUrl
+    ? `URL saved: ${state.sheetsUrl.slice(0, 50)}…`
+    : 'Not configured';
 }
 
 function updateSyncStatus(cls, msg) {
-  const el = document.getElementById('syncStatus');
-  el.className = 'sync-status ' + cls;
-  el.textContent = msg;
+  const el      = document.getElementById('syncStatus');
+  el.className  = 'sync-status ' + (cls || '');
+  el.textContent = msg || '';
 }
 
 // ─── CSV Export ──────────────────────────────────────────────────────────────
 
 function exportCSV() {
-  const rows = [['Timestamp','Person','Amount']];
-  state.log.forEach(e => {
-    if (e.person === 'SYSTEM') return;
-    rows.push([e.ts, e.person, e.amount]);
-  });
-  const csv = rows.map(r => r.join(',')).join('\n');
+  const rows = [['Timestamp', 'Person', 'Amount']];
+  state.log
+    .filter(e => e.person && e.person !== 'SYSTEM' && !e.note)
+    .forEach(e => rows.push([e.ts, e.person, e.amount]));
+  const csv  = rows.map(r => r.join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `swear-jar-log-${new Date().toISOString().slice(0,10)}.csv`;
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `swear-jar-log-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
   showToast('CSV exported!');
@@ -763,19 +902,20 @@ function exportCSV() {
 // ─── Online/offline status ───────────────────────────────────────────────────
 
 function updateOnlineStatus() {
-  if (navigator.onLine) {
-    updateSyncStatus('', '');
-  } else {
+  if (!navigator.onLine) {
     updateSyncStatus('', '📴 Offline — changes saved locally');
   }
 }
 
-window.addEventListener('online',  updateOnlineStatus);
+window.addEventListener('online',  () => {
+  updateSyncStatus('', '');
+  syncBidirectional(); // auto-sync when back online
+});
 window.addEventListener('offline', updateOnlineStatus);
 
 // ─── Clock refresh ────────────────────────────────────────────────────────────
 
-setInterval(updateUI, 60000); // refresh free-hit countdown every minute
+setInterval(updateUI, 60000);
 
 // ─── PWA service worker ──────────────────────────────────────────────────────
 
@@ -789,12 +929,17 @@ if ('serviceWorker' in navigator) {
 
 document.getElementById('settingsBtn').addEventListener('click', openSettings);
 document.getElementById('syncBtn').addEventListener('click', () => {
-  syncToSheets();
-  showToast('Sync requested…');
+  syncBidirectional();
+  showToast('Syncing…');
 });
 
 updateUI();
 updateOnlineStatus();
+
+// Auto-sync on load so each device picks up remote state immediately
+if (state.sheetsUrl) {
+  syncBidirectional();
+}
 </script>
 </body>
 </html>

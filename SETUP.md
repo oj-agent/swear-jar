@@ -2,198 +2,184 @@
 
 ## Quick Start (Local Test)
 
-The app is a single `index.html` file. You can open it directly from a local server:
-
 ```bash
 cd ~/.openclaw/workspace/projects/swear-jar
 python3 -m http.server 8080
-# Open http://localhost:8080 in browser
-```
-
-Or deploy to GitHub Pages (recommended for phone access):
-
----
-
-## GitHub Pages Deployment (Recommended)
-
-### 1. Create a GitHub repo
-
-```bash
-cd ~/.openclaw/workspace/projects/swear-jar
-git init
-git add .
-git commit -m "Initial Swear Jar PWA"
-gh repo create swear-jar --public --source=. --push
-```
-
-### 2. Enable GitHub Pages
-
-Go to the repo on GitHub → **Settings** → **Pages** → **Source: main branch / root** → Save.
-
-Your URL will be: `https://YOUR-USERNAME.github.io/swear-jar/`
-
-### 3. Install as PWA on Android (Pixel 10 Pro)
-
-1. Open Chrome → navigate to your GitHub Pages URL
-2. Tap the three-dot menu → **Add to Home screen**
-3. Tap **Install** — it will appear as a full-screen app icon
-
-### 4. Install as PWA on iPhone
-
-1. Open Safari → navigate to the URL
-2. Tap the **Share** icon (square with arrow) → **Add to Home Screen**
-3. Tap **Add**
-
-> **Note:** Safari on iOS requires HTTPS for PWA features. GitHub Pages provides this automatically.
-
----
-
-## Google Sheets Backend (Optional Sync)
-
-This lets both phones see the same log and totals.
-
-### Step 1: Create the Google Sheet
-
-1. Go to [sheets.google.com](https://sheets.google.com) and create a new sheet named **Swear Jar**
-2. Share the sheet with both Robert and Tingting (so they can view it)
-3. Set up two sheets/tabs:
-   - **`Log`** — will store hit events (auto-created by script)
-   - **`Totals`** — will store current totals (auto-created by script)
-
-### Step 2: Deploy the Apps Script
-
-1. In the Google Sheet, go to **Extensions → Apps Script**
-2. Delete any existing code, paste the following:
-
-```javascript
-const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
-
-function doPost(e) {
-  try {
-    const data = JSON.parse(e.postData.contents);
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-
-    if (data.action === 'logHit') {
-      // Append to Log sheet
-      let logSheet = ss.getSheetByName('Log');
-      if (!logSheet) {
-        logSheet = ss.insertSheet('Log');
-        logSheet.appendRow(['Timestamp', 'Person', 'Amount', 'Total Robert', 'Total Tingting']);
-      }
-      logSheet.appendRow([
-        data.ts,
-        data.person,
-        data.amount,
-        data.totalRobert,
-        data.totalTingting
-      ]);
-
-      // Update Totals sheet
-      let totSheet = ss.getSheetByName('Totals');
-      if (!totSheet) {
-        totSheet = ss.insertSheet('Totals');
-        totSheet.appendRow(['Person', 'Total', 'Last Updated']);
-      }
-
-      // Find or create rows for each person
-      const totData = totSheet.getDataRange().getValues();
-      let robertRow = -1, tingtingRow = -1;
-      for (let i = 1; i < totData.length; i++) {
-        if (totData[i][0] === 'Robert')  robertRow = i + 1;
-        if (totData[i][0] === 'Tingting') tingtingRow = i + 1;
-      }
-      const now = new Date().toISOString();
-      if (robertRow === -1)  { totSheet.appendRow(['Robert', data.totalRobert, now]); }
-      else { totSheet.getRange(robertRow, 2, 1, 2).setValues([[data.totalRobert, now]]); }
-      if (tingtingRow === -1) { totSheet.appendRow(['Tingting', data.totalTingting, now]); }
-      else { totSheet.getRange(tingtingRow, 2, 1, 2).setValues([[data.totalTingting, now]]); }
-    }
-
-    return ContentService
-      .createTextOutput(JSON.stringify({ status: 'ok' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  } catch(err) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ status: 'error', message: err.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-}
-
-function doGet(e) {
-  // Health check / ping
-  return ContentService
-    .createTextOutput(JSON.stringify({ status: 'ok', message: 'Swear Jar backend running' }))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-```
-
-3. Click **Deploy → New deployment**
-4. Select type: **Web app**
-5. Description: `Swear Jar v1`
-6. Execute as: **Me**
-7. Who has access: **Anyone** (required for the app to post from phones)
-8. Click **Deploy** → copy the **Web App URL**
-
-### Step 3: Enter the URL in the App
-
-1. Open the Swear Jar app on your phone
-2. Tap ⚙️ (Settings) → paste the Web App URL in the **Apps Script Web App URL** field
-3. Tap **Save & Test Sheets**
-
-> **Important:** Both phones need to enter the same URL in settings. Settings are stored per device in localStorage, so you'll need to configure this on each phone separately.
-
----
-
-## How the 24-Hour Free Hit Works
-
-- Each person gets **one FREE hit per 24-hour rolling window**
-- The 24-hour clock starts from their **first hit of the day**, not midnight
-- Example: Robert hits at 3pm Tuesday → next free hit available at 3pm Wednesday
-- Subsequent hits within the same 24h window are **+$10 each**
-- The button shows "FREE" (green) or "$10" (red) based on current status
-- A countdown shows how long until the free hit resets
-
----
-
-## PWA Icons
-
-The manifest references `icon-192.png` and `icon-512.png`. To add real icons:
-
-1. Create a 512×512 PNG with your jar icon
-2. Resize to 192×192 and 512×512
-3. Place both in the `swear-jar/` folder
-
-Without these, the app still installs — it just uses the browser's default icon.
-
-Quick way to generate icons using the built-in emoji:
-
-```bash
-# If you have ImageMagick:
-convert -background '#1a1a2e' -fill white -gravity Center \
-  -font "Apple Color Emoji" -pointsize 400 \
-  label:'💰' -resize 512x512 icon-512.png
-convert icon-512.png -resize 192x192 icon-192.png
+# Open http://localhost:8080
 ```
 
 ---
 
-## Architecture Notes
-
-- **State storage:** `localStorage` — persists across browser sessions on the same device
-- **Sync:** POST to Google Apps Script on every hit; no-cors mode (opaque response)
-- **Offline:** Service worker caches `index.html`, app works fully offline
-- **Sound:** Web Audio API — no external files; synthesized cha-ching on paid hits
-- **Two-device sync:** Both phones write to the same Sheet but read state from their own localStorage (keep them roughly in sync; the Sheet is the source of truth log)
-
----
-
-## Updating the App
-
-To push updates:
+## GitHub Pages Deployment
 
 ```bash
 cd ~/.openclaw/workspace/projects/swear-jar
 git add . && git commit -m "Update" && git push
 ```
 
-GitHub Pages auto-deploys on push. The service worker will update on next visit.
+GitHub Pages auto-deploys on push. The service worker updates on next visit.
+
+**Live URL:** https://oj-agent.github.io/swear-jar/
+
+### Install as PWA on Android (Pixel 10 Pro)
+
+1. Open Chrome → go to the URL above
+2. Tap ⋮ menu → **Add to Home screen** → **Install**
+
+### Install as PWA on iPhone
+
+1. Open Safari → go to the URL above
+2. Tap **Share** → **Add to Home Screen** → **Add**
+
+---
+
+## Google Sheets Sync — Full Bidirectional Setup
+
+The app now uses **bidirectional sync**: the Google Sheet is the single source of truth. Both phones push their local hits AND pull the complete log from the Sheet, then merge + recompute totals locally. This means:
+
+- Totals are always consistent across both phones after a sync
+- The 24h free-hit timer is also synced (derived from the log, not device clock)
+- No duplicate entries (deduplication by timestamp)
+
+### Step 1: Update the Apps Script
+
+The sync now requires a **GET endpoint** in the Apps Script (in addition to the existing POST). You need to replace the old script with the version below.
+
+1. Open your Google Sheet
+2. Go to **Extensions → Apps Script**
+3. **Delete all existing code**
+4. Paste the following:
+
+```javascript
+const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
+
+function getOrCreateLogSheet(ss) {
+  let sheet = ss.getSheetByName('Log');
+  if (!sheet) {
+    sheet = ss.insertSheet('Log');
+    sheet.appendRow(['Timestamp', 'Person', 'Amount']);
+  }
+  return sheet;
+}
+
+/**
+ * POST: Receives an array (or single object) of hit entries.
+ * Appends new entries to Log sheet, skipping duplicates by timestamp.
+ */
+function doPost(e) {
+  try {
+    const data = JSON.parse(e.postData.contents);
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const logSheet = getOrCreateLogSheet(ss);
+
+    // Load existing timestamps to avoid duplicates
+    const existing = logSheet.getDataRange().getValues();
+    const existingTs = new Set(existing.slice(1).map(r => String(r[0])));
+
+    const entries = Array.isArray(data) ? data : [data];
+    for (const entry of entries) {
+      if (!entry.ts || !entry.person) continue;
+      if (!existingTs.has(entry.ts)) {
+        logSheet.appendRow([entry.ts, entry.person, Number(entry.amount) || 0]);
+        existingTs.add(entry.ts);
+      }
+    }
+
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'ok' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'error', message: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/**
+ * GET: Returns all log entries as JSON.
+ * Used by the app to pull the full shared log and recompute state.
+ */
+function doGet(e) {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const logSheet = getOrCreateLogSheet(ss);
+    const data = logSheet.getDataRange().getValues();
+    const rows = data
+      .slice(1)                         // skip header row
+      .filter(r => r[0])                // skip blank rows
+      .map(r => ({
+        ts:     String(r[0]),
+        person: String(r[1]),
+        amount: Number(r[2]) || 0
+      }));
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'ok', log: rows }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'error', message: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+```
+
+### Step 2: Re-deploy as a New Version
+
+> **Important:** You must deploy a *new version* — editing the code alone doesn't update the live endpoint.
+
+1. Click **Deploy → Manage deployments** (or **New deployment** if this is your first time)
+2. Click the ✏️ edit icon next to your existing deployment
+3. Under **Version**, select **New version**
+4. Click **Deploy**
+5. Copy the **Web App URL** (it stays the same URL, just updated)
+
+> If you've never deployed before: Click **Deploy → New deployment** → Type: **Web app** → Execute as: **Me** → Who has access: **Anyone** → Deploy → copy URL.
+
+### Step 3: Enter the URL on Each Phone
+
+1. Open Swear Jar app → tap ⚙️ Settings
+2. Paste the Web App URL in **Apps Script Web App URL**
+3. Tap **Save & Test Sheets** — should show "✅ Connected! GET sync enabled."
+
+> Both phones need the same URL. Settings are stored per device in localStorage.
+
+---
+
+## How Sync Works (New Logic)
+
+Each time you tap Hit or press ☁️:
+
+1. **Push** — any unsynced local hits are sent to the Sheet (POST, no-cors)
+2. **Pull** — all log rows are fetched from the Sheet (GET)
+3. **Merge** — local + remote entries are unioned, deduplicated by timestamp
+4. **Recompute** — totals and the 24h free-hit timer are computed from the merged log
+
+The app also **auto-syncs on open**, so each device immediately picks up the other's state.
+
+---
+
+## How the 24-Hour Free Hit Works
+
+- Each person gets **one FREE hit per 24-hour rolling window**
+- The clock starts from the timestamp of the free hit, not midnight
+- Subsequent hits within the same 24h window are +$10 each
+- After sync, both phones see the same free-hit timer (derived from the shared log)
+
+---
+
+## Architecture Notes
+
+- **State storage:** `localStorage` — persists across sessions on the same device
+- **Source of truth:** Google Sheet Log tab — all devices derive state from it
+- **Offline:** Service worker caches app; hits are saved locally and synced when back online
+- **Sound:** Web Audio API synthesized cha-ching on paid hits
+- **Deduplication:** Entries are matched by ISO timestamp; same hit won't appear twice
+
+---
+
+## Updating the App
+
+```bash
+cd ~/.openclaw/workspace/projects/swear-jar
+git add . && git commit -m "Update" && git push
+```
